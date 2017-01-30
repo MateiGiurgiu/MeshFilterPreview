@@ -22,7 +22,14 @@ public class CustomMeshFilterPreview : Editor
     private PreviewRenderUtility uvPreviewUtility;
     private MeshFilter targetMeshFilter;
     private MeshRenderer targetMeshRenderer;
-    private Mesh targetMesh;
+    private Mesh targetMesh
+    {
+        get
+        {
+            if (targetMeshFilter == null) return null;
+            else return targetMeshFilter.sharedMesh;
+        }
+    }
 
     private Vector2 drag;
     private Vector2 pan;
@@ -33,42 +40,13 @@ public class CustomMeshFilterPreview : Editor
     private Material defaultMaterial;
     private Material uvMaterial;
     private UVchannels UVchannel;
+    private bool isInitialised = false;
 
     #region Unity Calls
 
     private void OnEnable()
     {
-        // getting components
-        targetMeshFilter = target as MeshFilter;
-        targetMeshRenderer = targetMeshFilter.GetComponent<MeshRenderer>();
-        if (targetMeshFilter == null || targetMeshRenderer == null) return;
-        targetMesh = targetMeshFilter.sharedMesh;
-
-        // calculating bounds and real size
-        targetMeshFilter.sharedMesh.RecalculateBounds();
-        meshMaxSize = Mathf.Max(targetMesh.bounds.size.x, targetMesh.bounds.size.y, targetMesh.bounds.size.z);
-
-        // initialising previewers 
-        if (meshPreviewUtility == null)
-        {
-            meshPreviewUtility = new PreviewRenderUtility();
-            meshPreviewUtility.m_Camera.transform.position = new Vector3(meshMaxSize, meshMaxSize / 2, meshMaxSize) * 5;
-            meshPreviewUtility.m_Camera.transform.LookAt(Vector3.zero);
-            meshPreviewUtility.m_Camera.farClipPlane = Mathf.Clamp(meshMaxSize * 20, 20, 1000);
-        }
-
-        if(uvPreviewUtility == null)
-        {
-            uvPreviewUtility = new PreviewRenderUtility();
-            uvPreviewUtility.m_Camera.transform.position = new Vector3(0.5f, 1.0f, 0.5f);
-            uvPreviewUtility.m_Camera.transform.rotation = Quaternion.Euler(90.0f, 0.0f, 0.0f);
-            uvPreviewUtility.m_Camera.nearClipPlane = 0.1f;
-            uvPreviewUtility.m_Camera.orthographic = true;
-            uvPreviewUtility.m_Camera.orthographicSize = 1;
-        }
-
-        defaultMaterial = AssetDatabase.GetBuiltinExtraResource<Material>("Default-Diffuse.mat");
-        uvMaterial = new Material(Shader.Find("Hidden/Wireframe"));
+        Initialise();
     }
 
     private void OnDestroy()
@@ -83,6 +61,7 @@ public class CustomMeshFilterPreview : Editor
             uvPreviewUtility.Cleanup();
             uvPreviewUtility = null;
         }
+        isInitialised = false;
     }
 
     public override bool HasPreviewGUI()
@@ -92,6 +71,12 @@ public class CustomMeshFilterPreview : Editor
 
     public override void OnInteractivePreviewGUI(Rect r, GUIStyle background)
     {
+        // checking is anything happened with our mesh to act accordingly
+        if(targetMesh != null && !isInitialised)
+        {
+            Initialise();
+        }
+
         // getting and applying user input
         Rect dragArea = r;
         dragArea.y += 20;
@@ -110,7 +95,58 @@ public class CustomMeshFilterPreview : Editor
         DrawUI(r, background);
     }
 
+    public override GUIContent GetPreviewTitle()
+    {
+        string title = targetMesh != null ? targetMeshFilter.name + " : " + targetMesh.name : "No Mesh";
+        return new GUIContent(title);
+    }
+
+    public override void OnPreviewSettings()
+    {
+        if (GUILayout.Button("Reset Camera", EditorStyles.miniButtonMid))
+        {
+            if (showUVs)    ResetUVPreviewCamera();
+            else            ResetMeshPreviewCamera();
+        }
+    }
+
     #endregion
+
+
+    private void Initialise()
+    {
+        // getting components
+        targetMeshFilter = target as MeshFilter;
+        targetMeshRenderer = targetMeshFilter.GetComponent<MeshRenderer>();
+        if (targetMeshFilter == null || targetMeshRenderer == null) return;
+        if (targetMesh == null) return;
+        // calculating bounds and real size
+        targetMeshFilter.sharedMesh.RecalculateBounds();
+        meshMaxSize = Mathf.Max(targetMesh.bounds.size.x, targetMesh.bounds.size.y, targetMesh.bounds.size.z);
+
+        // initialising previewers 
+        if (meshPreviewUtility == null)
+        {
+            meshPreviewUtility = new PreviewRenderUtility();
+            meshPreviewUtility.m_Camera.transform.position = new Vector3(meshMaxSize, meshMaxSize / 2, meshMaxSize) * 5;
+            meshPreviewUtility.m_Camera.transform.LookAt(Vector3.zero);
+            meshPreviewUtility.m_Camera.farClipPlane = Mathf.Clamp(meshMaxSize * 20, 20, 1000);
+        }
+
+        if (uvPreviewUtility == null)
+        {
+            uvPreviewUtility = new PreviewRenderUtility();
+            uvPreviewUtility.m_Camera.transform.position = new Vector3(0.5f, 1.0f, 0.5f);
+            uvPreviewUtility.m_Camera.transform.rotation = Quaternion.Euler(90.0f, 0.0f, 0.0f);
+            uvPreviewUtility.m_Camera.nearClipPlane = 0.1f;
+            uvPreviewUtility.m_Camera.orthographic = true;
+            uvPreviewUtility.m_Camera.orthographicSize = 1;
+        }
+
+        defaultMaterial = AssetDatabase.GetBuiltinExtraResource<Material>("Default-Diffuse.mat");
+        uvMaterial = new Material(Shader.Find("Hidden/Wireframe"));
+        isInitialised = true;
+    }
 
 
     #region Drawings
@@ -196,7 +232,7 @@ public class CustomMeshFilterPreview : Editor
             Rect previewRenderRect = new Rect(0.0f, 0.0f, previewRenderSize / 2, previewRenderSize / 2);
 
             // getting the current mesh data (uvs, vertices)
-            int[] triangles = targetMeshFilter.sharedMesh.triangles;
+            int[] triangles = targetMesh.triangles;
             List<Vector2> uv = new List<Vector2>();
             targetMesh.GetUVs((int)UVchannel, uv);
 
@@ -234,54 +270,57 @@ public class CustomMeshFilterPreview : Editor
 
     private void DrawUI(Rect r, GUIStyle background)
     {
-        // setting a cusomt style
-        GUIStyle style = new GUIStyle(GUI.skin.button);
-        style.alignment = TextAnchor.MiddleCenter;
-        style.normal.textColor = Color.white;
-        style.fontSize = 10;
-
-        Rect buttonMeshRect = new Rect(r.x, r.y, r.width / 2, EditorGUIUtility.singleLineHeight);
-        Rect buttonUVRect = new Rect(r.x + r.width / 2, r.y, r.width / 2, EditorGUIUtility.singleLineHeight);
-
-        if (GUI.Button(buttonMeshRect, "Mesh", EditorStyles.toolbarButton)) showUVs = false;
-        if (GUI.Button(buttonUVRect, "UVs", EditorStyles.toolbarButton)) showUVs = true;
-
-        if (!showUVs)
+        if (targetMesh != null)
         {
-            // mesh info
-            Rect realSizeRect = new Rect(r.x, buttonMeshRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
-            Rect pivotPositionRect = new Rect(r.x, realSizeRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
-            Rect submeshesCountRect = new Rect(r.x, pivotPositionRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
-            Rect trianglesCountRect = new Rect(r.x, submeshesCountRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
-            Rect verticesCountRect = new Rect(r.x, trianglesCountRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
-            GUI.Label(realSizeRect, string.Format("Real Size: [{0},{1},{2}]",
-                (targetMesh.bounds.size.x).ToString("0.###"),
-                (targetMesh.bounds.size.y).ToString("0.###"),
-                (targetMesh.bounds.size.z).ToString("0.###")
-            ));
-            GUI.Label(pivotPositionRect, string.Format("Pivot: [{0},{1},{2}]",
-                (targetMesh.bounds.center.x).ToString("0.####"),
-                (targetMesh.bounds.center.y).ToString("0.####"),
-                (targetMesh.bounds.center.z).ToString("0.####")
-                ));
-            GUI.Label(submeshesCountRect, string.Format("Submeshes: {0}", targetMeshFilter.sharedMesh.subMeshCount));
-            GUI.Label(trianglesCountRect, string.Format("Triangles: {0}", targetMeshFilter.sharedMesh.triangles.Length / 3));
-            GUI.Label(verticesCountRect, string.Format("Vertices: {0}", targetMeshFilter.sharedMesh.vertexCount));
+            // setting a cusomt style
+            GUIStyle style = new GUIStyle(GUI.skin.button);
+            style.alignment = TextAnchor.MiddleCenter;
+            style.normal.textColor = Color.white;
+            style.fontSize = 10;
 
-            // mesh settings
-            Rect centerPivotRect = new Rect(r.x, r.yMax - EditorGUIUtility.singleLineHeight, r.width / 6, EditorGUIUtility.singleLineHeight);
-            if (GUI.Button(centerPivotRect, "Center Pivot", EditorStyles.miniButton))
+            Rect buttonMeshRect = new Rect(r.x, r.y, r.width / 2, EditorGUIUtility.singleLineHeight);
+            Rect buttonUVRect = new Rect(r.x + r.width / 2, r.y, r.width / 2, EditorGUIUtility.singleLineHeight);
+
+            if (GUI.Button(buttonMeshRect, "Mesh", EditorStyles.toolbarButton)) showUVs = false;
+            if (GUI.Button(buttonUVRect, "UVs", EditorStyles.toolbarButton)) showUVs = true;
+
+            if (!showUVs)
             {
-                Bounds currentBounds = targetMeshFilter.sharedMesh.bounds;
-                currentBounds.center = new Vector3(currentBounds.center.x, currentBounds.size.y / 2, currentBounds.center.z);
-                targetMeshFilter.sharedMesh.bounds = currentBounds;
+                // mesh info
+                Rect realSizeRect = new Rect(r.x, buttonMeshRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
+                Rect pivotPositionRect = new Rect(r.x, realSizeRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
+                Rect submeshesCountRect = new Rect(r.x, pivotPositionRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
+                Rect trianglesCountRect = new Rect(r.x, submeshesCountRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
+                Rect verticesCountRect = new Rect(r.x, trianglesCountRect.yMax, r.width / 3, EditorGUIUtility.singleLineHeight);
+                GUI.Label(realSizeRect, string.Format("Real Size: [{0},{1},{2}]",
+                    (targetMesh.bounds.size.x).ToString("0.###"),
+                    (targetMesh.bounds.size.y).ToString("0.###"),
+                    (targetMesh.bounds.size.z).ToString("0.###")
+                ));
+                GUI.Label(pivotPositionRect, string.Format("Pivot: [{0},{1},{2}]",
+                    (targetMesh.bounds.center.x).ToString("0.####"),
+                    (targetMesh.bounds.center.y).ToString("0.####"),
+                    (targetMesh.bounds.center.z).ToString("0.####")
+                    ));
+                GUI.Label(submeshesCountRect, string.Format("Submeshes: {0}", targetMesh.subMeshCount));
+                GUI.Label(trianglesCountRect, string.Format("Triangles: {0}", targetMesh.triangles.Length / 3));
+                GUI.Label(verticesCountRect, string.Format("Vertices: {0}", targetMesh.vertexCount));
+
+                // mesh settings
+                Rect centerPivotRect = new Rect(r.x, r.yMax - EditorGUIUtility.singleLineHeight, r.width / 6, EditorGUIUtility.singleLineHeight);
+                if (GUI.Button(centerPivotRect, "Center Pivot", EditorStyles.miniButton))
+                {
+                    Bounds currentBounds = targetMeshFilter.sharedMesh.bounds;
+                    currentBounds.center = new Vector3(currentBounds.center.x, currentBounds.size.y / 2, currentBounds.center.z);
+                    targetMeshFilter.sharedMesh.bounds = currentBounds;
+                }
             }
-        }
-        else
-        {
-            // uv channel selection
-            Rect uvUVchannelRect = new Rect(0, r.yMax - EditorGUIUtility.singleLineHeight, Mathf.Clamp(r.width / 10, 50, 100), EditorGUIUtility.singleLineHeight);
-            UVchannel = (UVchannels)EditorGUI.EnumPopup(uvUVchannelRect, UVchannel);
+            else
+            {
+                // uv channel selection
+                Rect uvUVchannelRect = new Rect(0, r.yMax - EditorGUIUtility.singleLineHeight, Mathf.Clamp(r.width / 10, 50, 100), EditorGUIUtility.singleLineHeight);
+                UVchannel = (UVchannels)EditorGUI.EnumPopup(uvUVchannelRect, UVchannel);
+            }
         }
     }
 
