@@ -7,9 +7,9 @@ Custom MeshFilter preview for Unity engine
 • That's it! When you will click a GameObject which has a Mesh Filter <br> and a preview will appear on the bottom of the inspector tab. <
 
 # Controls
-• Left Click => rotate
-• Middle Mouse => pan
-• Mouse Wheel => zoom
+• Left Click => rotate<br>
+• Middle Mouse => pan<br>
+• Mouse Wheel => zoom<br>
 
 # TODOs
 • Add/Fix shadows on the floor plane <br>
